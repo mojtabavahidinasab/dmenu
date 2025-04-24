@@ -17,6 +17,8 @@
 #include <X11/Xft/Xft.h>
 #include <X11/Xresource.h>
 
+#include <fribidi.h>
+
 #include "drw.h"
 #include "util.h"
 
@@ -39,6 +41,7 @@ struct item {
 };
 
 static char text[BUFSIZ] = "";
+static char fribidi_text[BUFSIZ] = "";
 static char *embed;
 static int bh, mw, mh;
 static int inputw = 0, promptw, passwd = 0;
@@ -162,6 +165,27 @@ cistrstr(const char *s, const char *sub)
 	return NULL;
 }
 
+static void
+apply_fribidi(char *str)
+{
+  FriBidiStrIndex len = strlen(str);
+  FriBidiChar logical[BUFSIZ];
+  FriBidiChar visual[BUFSIZ];
+  FriBidiParType base = FRIBIDI_PAR_ON;
+  FriBidiCharSet charset;
+  fribidi_boolean result;
+
+  fribidi_text[0] = 0;
+  if (len>0)
+  {
+    charset = fribidi_parse_charset("UTF-8");
+    len = fribidi_charset_to_unicode(charset, str, len, logical);
+    result = fribidi_log2vis(logical, len, &base, visual, NULL, NULL, NULL);
+    len = fribidi_unicode_to_charset(charset, visual, len, fribidi_text);
+  }
+}
+
+
 static int
 drawitem(struct item *item, int x, int y, int w)
 {
@@ -172,7 +196,8 @@ drawitem(struct item *item, int x, int y, int w)
 	else
 		drw_setscheme(drw, scheme[SchemeNorm]);
 
-	return drw_text(drw, x, y, w, bh, lrpad / 2, item->text, 0);
+	apply_fribidi(item->text);
+	return drw_text(drw, x, y, w, bh, lrpad / 2, fribidi_text, 0);
 }
 
 static void
@@ -198,7 +223,10 @@ drawmenu(void)
 		memset(censort, '.', strlen(text));
 		drw_text(drw, x, 0, w, bh, lrpad / 2, censort, 0);
 		free(censort);
-	} else drw_text(drw, x, 0, w, bh, lrpad / 2, text, 0);
+	} else {
+		apply_fribidi(text);
+		drw_text(drw, x, 0, w, bh, lrpad / 2, fribidi_text, 0);
+	}
 
 	curpos = TEXTW(text) - TEXTW(&text[cursor]);
 	if ((curpos += lrpad / 2 - 1) < w) {
